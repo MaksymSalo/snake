@@ -129,3 +129,15 @@
     background-color: var(--background);
   }
 }
+/* Snake game — death shake animation */
+@keyframes snake-shake {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  15% { transform: translate3d(-6px, 2px, 0) rotate(-0.4deg); }
+  30% { transform: translate3d(5px, -3px, 0) rotate(0.4deg); }
+  45% { transform: translate3d(-4px, 3px, 0); }
+  60% { transform: translate3d(4px, -2px, 0); }
+  75% { transform: translate3d(-2px, 1px, 0); }
+}
+.snake-shake {
+  animation: snake-shake 600ms ease-in-out;
+}

@@ -6,11 +6,23 @@ import { Button } from "@/components/ui/button"
 const GRID_SIZE = 20 // cells per row/column
 const CELL = 22 // px per cell
 const BOARD = GRID_SIZE * CELL
-const SPEED_MS = 110 // tick interval
 
 type Point = { x: number; y: number }
 type Direction = "up" | "down" | "left" | "right"
 type Status = "idle" | "playing" | "over"
+type SpeedKey = "chill" | "normal" | "fast" | "insane"
+
+const SPEEDS: Record<SpeedKey, { label: string; ms: number }> = {
+  chill: { label: "Chill", ms: 160 },
+  normal: { label: "Normal", ms: 110 },
+  fast: { label: "Fast", ms: 70 },
+  insane: { label: "Insane", ms: 45 },
+}
+
+const FRUITS = ["🍎", "🍌", "🍇", "🍒", "🍓", "🍊", "🥝", "🍉", "🍑", "🥭", "🍍", "🫐"]
+const pickFruit = () => FRUITS[Math.floor(Math.random() * FRUITS.length)]
+
+type Food = { pos: Point; emoji: string }
 
 const DIRECTIONS: Record<Direction, Point> = {
   up: { x: 0, y: -1 },
@@ -32,13 +44,15 @@ const INITIAL_SNAKE: Point[] = [
   { x: 6, y: 10 },
 ]
 
-function randomFood(snake: Point[]): Point {
+function randomFood(snake: Point[]): Food {
   while (true) {
-    const food = {
+    const pos = {
       x: Math.floor(Math.random() * GRID_SIZE),
       y: Math.floor(Math.random() * GRID_SIZE),
     }
-    if (!snake.some((s) => s.x === food.x && s.y === food.y)) return food
+    if (!snake.some((s) => s.x === pos.x && s.y === pos.y)) {
+      return { pos, emoji: pickFruit() }
+    }
   }
 }
 
@@ -47,13 +61,16 @@ export function SnakeGame() {
   const [status, setStatus] = useState<Status>("idle")
   const [score, setScore] = useState(0)
   const [highScore, setHighScore] = useState(0)
+  const [speed, setSpeed] = useState<SpeedKey>("normal")
 
   // Mutable game state kept in refs so the game loop reads fresh values.
   const snakeRef = useRef<Point[]>(INITIAL_SNAKE)
-  const foodRef = useRef<Point>({ x: 14, y: 10 })
+  const foodRef = useRef<Food>({ pos: { x: 14, y: 10 }, emoji: "🍎" })
   const dirRef = useRef<Direction>("right")
   const nextDirRef = useRef<Direction>("right")
   const statusRef = useRef<Status>("idle")
+  // Death animation: 0 → no animation, otherwise frame counter (0..1)
+  const deathRef = useRef<number>(0)
 
   useEffect(() => {
     statusRef.current = status
@@ -69,14 +86,21 @@ export function SnakeGame() {
     const bg = styles.getPropertyValue("--card").trim() || "#1a201c"
     const border = styles.getPropertyValue("--border").trim() || "#333"
     const primary = styles.getPropertyValue("--primary").trim() || "#4ade80"
-    const accent = styles.getPropertyValue("--accent").trim() || "#fbbf24"
+    const destructive = styles.getPropertyValue("--destructive").trim() || "#ef4444"
 
-    // Board background
+    // Checker-pattern board background (slightly nicer than plain)
     ctx.fillStyle = bg
     ctx.fillRect(0, 0, BOARD, BOARD)
+    ctx.fillStyle = "rgba(255,255,255,0.025)"
+    for (let y = 0; y < GRID_SIZE; y++) {
+      for (let x = 0; x < GRID_SIZE; x++) {
+        if ((x + y) % 2 === 0) ctx.fillRect(x * CELL, y * CELL, CELL, CELL)
+      }
+    }
 
-    // Grid lines
+    // Subtle grid lines
     ctx.strokeStyle = border
+    ctx.globalAlpha = 0.4
     ctx.lineWidth = 1
     for (let i = 1; i < GRID_SIZE; i++) {
       ctx.beginPath()
@@ -88,29 +112,107 @@ export function SnakeGame() {
       ctx.lineTo(BOARD, i * CELL)
       ctx.stroke()
     }
+    ctx.globalAlpha = 1
 
-    // Food
+    // Food — emoji sprite with a soft glow
     const food = foodRef.current
-    ctx.fillStyle = accent
-    ctx.beginPath()
-    ctx.arc(food.x * CELL + CELL / 2, food.y * CELL + CELL / 2, CELL / 2 - 3, 0, Math.PI * 2)
-    ctx.fill()
+    const fcx = food.pos.x * CELL + CELL / 2
+    const fcy = food.pos.y * CELL + CELL / 2
+    const pulse = 1 + Math.sin(Date.now() / 250) * 0.06
+    ctx.save()
+    ctx.shadowColor = "rgba(255,200,80,0.55)"
+    ctx.shadowBlur = 10
+    ctx.font = `${Math.floor(CELL * 0.95 * pulse)}px serif`
+    ctx.textAlign = "center"
+    ctx.textBaseline = "middle"
+    ctx.fillText(food.emoji, fcx, fcy + 1)
+    ctx.restore()
 
     // Snake
     const snake = snakeRef.current
-    snake.forEach((seg, i) => {
-      ctx.fillStyle = primary
-      ctx.globalAlpha = i === 0 ? 1 : Math.max(0.45, 1 - i * 0.03)
-      const pad = i === 0 ? 1 : 2
-      const r = 5
+    const dying = deathRef.current
+    const headDir = dirRef.current
+
+    // Body: rounded segments with a gradient + scales
+    for (let i = snake.length - 1; i >= 0; i--) {
+      const seg = snake[i]
+      const isHead = i === 0
+      const t = i / Math.max(1, snake.length - 1) // 0 at head, 1 at tail
+      const pad = isHead ? 1 : 2
       const x = seg.x * CELL + pad
       const y = seg.y * CELL + pad
       const w = CELL - pad * 2
+      const r = isHead ? 7 : 6
+
+      // Color: green→darker green along body. Red wash during death.
+      const tintR = dying > 0 ? Math.min(255, 80 + dying * 175) : 0
+      const baseR = 74 + Math.floor((1 - t) * 30) + tintR * 0.7
+      const baseG = dying > 0 ? Math.max(50, 222 - dying * 170) : 222 - Math.floor(t * 80)
+      const baseB = dying > 0 ? Math.max(40, 128 - dying * 80) : 128 - Math.floor(t * 40)
+      ctx.fillStyle = `rgb(${Math.min(255, baseR)}, ${baseG}, ${baseB})`
       ctx.beginPath()
       ctx.roundRect(x, y, w, w, r)
       ctx.fill()
-    })
-    ctx.globalAlpha = 1
+
+      // Scale highlight
+      if (!isHead) {
+        ctx.fillStyle = `rgba(255,255,255,${0.08 - t * 0.05})`
+        ctx.beginPath()
+        ctx.arc(x + w / 2, y + w / 2, w * 0.28, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
+
+    // Head details — eyes pointing in current direction
+    if (snake.length > 0) {
+      const head = snake[0]
+      const hx = head.x * CELL + CELL / 2
+      const hy = head.y * CELL + CELL / 2
+      const eyeOffset = CELL * 0.22
+      const eyeR = CELL * 0.11
+      const pupilR = CELL * 0.06
+      // Perpendicular axis for eye placement
+      let ex1 = 0, ey1 = 0, ex2 = 0, ey2 = 0
+      let pdx = 0, pdy = 0
+      if (headDir === "right") { ex1 = eyeOffset; ey1 = -eyeOffset; ex2 = eyeOffset; ey2 = eyeOffset; pdx = pupilR * 0.6 }
+      if (headDir === "left")  { ex1 = -eyeOffset; ey1 = -eyeOffset; ex2 = -eyeOffset; ey2 = eyeOffset; pdx = -pupilR * 0.6 }
+      if (headDir === "up")    { ex1 = -eyeOffset; ey1 = -eyeOffset; ex2 = eyeOffset; ey2 = -eyeOffset; pdy = -pupilR * 0.6 }
+      if (headDir === "down")  { ex1 = -eyeOffset; ey1 = eyeOffset; ex2 = eyeOffset; ey2 = eyeOffset; pdy = pupilR * 0.6 }
+
+      ctx.fillStyle = "#ffffff"
+      ctx.beginPath(); ctx.arc(hx + ex1, hy + ey1, eyeR, 0, Math.PI * 2); ctx.fill()
+      ctx.beginPath(); ctx.arc(hx + ex2, hy + ey2, eyeR, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = dying > 0 ? "#ff2222" : "#0a0a0a"
+      ctx.beginPath(); ctx.arc(hx + ex1 + pdx, hy + ey1 + pdy, pupilR, 0, Math.PI * 2); ctx.fill()
+      ctx.beginPath(); ctx.arc(hx + ex2 + pdx, hy + ey2 + pdy, pupilR, 0, Math.PI * 2); ctx.fill()
+
+      // X eyes when dead
+      if (dying >= 0.99) {
+        ctx.strokeStyle = "#0a0a0a"
+        ctx.lineWidth = 2
+        const drawX = (cx: number, cy: number) => {
+          const s = eyeR * 0.9
+          ctx.beginPath(); ctx.moveTo(cx - s, cy - s); ctx.lineTo(cx + s, cy + s); ctx.stroke()
+          ctx.beginPath(); ctx.moveTo(cx + s, cy - s); ctx.lineTo(cx - s, cy + s); ctx.stroke()
+        }
+        ctx.fillStyle = "#ffffff"
+        ctx.beginPath(); ctx.arc(hx + ex1, hy + ey1, eyeR, 0, Math.PI * 2); ctx.fill()
+        ctx.beginPath(); ctx.arc(hx + ex2, hy + ey2, eyeR, 0, Math.PI * 2); ctx.fill()
+        drawX(hx + ex1, hy + ey1)
+        drawX(hx + ex2, hy + ey2)
+      }
+    }
+
+    // Red flash overlay during death
+    if (dying > 0) {
+      ctx.fillStyle = destructive
+      ctx.globalAlpha = 0.15 * (1 - dying) + 0.05
+      ctx.fillRect(0, 0, BOARD, BOARD)
+      ctx.globalAlpha = 1
+    }
+
+    // Avoid "unused var" complaints for primary
+    void primary
   }, [])
 
   const startGame = useCallback(() => {
@@ -118,8 +220,14 @@ export function SnakeGame() {
     foodRef.current = randomFood(snakeRef.current)
     dirRef.current = "right"
     nextDirRef.current = "right"
+    deathRef.current = 0
     setScore(0)
     setStatus("playing")
+    // Move focus off any tab/button so the TV remote arrow keys don't get
+    // hijacked by the Tabs widget (Radix listens on the focused trigger).
+    requestAnimationFrame(() => {
+      canvasRef.current?.focus()
+    })
   }, [])
 
   // Game loop
@@ -148,7 +256,7 @@ export function SnakeGame() {
         return
       }
 
-      const ate = newHead.x === foodRef.current.x && newHead.y === foodRef.current.y
+      const ate = newHead.x === foodRef.current.pos.x && newHead.y === foodRef.current.pos.y
       const newSnake = [newHead, ...snake]
       if (ate) {
         foodRef.current = randomFood(newSnake)
@@ -164,8 +272,27 @@ export function SnakeGame() {
       draw()
     }
 
-    const id = setInterval(tick, SPEED_MS)
+    const id = setInterval(tick, SPEEDS[speed].ms)
     return () => clearInterval(id)
+  }, [status, draw, speed])
+
+  // Death animation: ~700ms red flash + shake + X eyes
+  useEffect(() => {
+    if (status !== "over") {
+      deathRef.current = 0
+      return
+    }
+    const start = performance.now()
+    const DURATION = 700
+    let raf = 0
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / DURATION)
+      deathRef.current = t
+      draw()
+      if (t < 1) raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
   }, [status, draw])
 
   const changeDirection = useCallback((dir: Direction) => {
@@ -189,21 +316,29 @@ export function SnakeGame() {
       a: "left",
       d: "right",
     }
-    // Tizen / standard TV remote numeric key codes
+    // Tizen / standard TV remote numeric key codes.
+    // Samsung Smart TVs use the standard 37/38/39/40 for the D-pad, but some
+    // older / web-browser builds use the 295xx range — accept both.
     const codeMap: Record<number, Direction> = {
-      38: "up", // ArrowUp
-      40: "down", // ArrowDown
-      37: "left", // ArrowLeft
-      39: "right", // ArrowRight
+      38: "up",
+      40: "down",
+      37: "left",
+      39: "right",
+      29460: "up",
+      29461: "down",
+      29462: "left",
+      29463: "right",
     }
-    // OK/Enter (13), Play (415), and Pause (19) start the game.
-    const START_CODES = new Set([13, 415, 19])
-    // Back/Return on Samsung TV remote (10009) — left here for completeness.
+    // OK/Enter (13), Play (415), Pause (19), Tizen MediaPlayPause (10252)
+    const START_CODES = new Set([13, 415, 19, 10252])
 
     const handler = (e: KeyboardEvent) => {
       const dir = keyMap[e.key] ?? codeMap[e.keyCode]
       if (dir) {
+        // Capture phase + stopPropagation prevents the Radix Tabs trigger
+        // (when still focused) from swallowing the arrow keys to switch tabs.
         e.preventDefault()
+        e.stopPropagation()
         changeDirection(dir)
         return
       }
@@ -212,6 +347,7 @@ export function SnakeGame() {
         e.key === " " || e.key === "Enter" || START_CODES.has(e.keyCode)
       if (isStartKey && statusRef.current !== "playing") {
         e.preventDefault()
+        e.stopPropagation()
         startGame()
       }
     }
@@ -231,8 +367,10 @@ export function SnakeGame() {
       // ignore — not running on a Tizen TV
     }
 
-    window.addEventListener("keydown", handler)
-    return () => window.removeEventListener("keydown", handler)
+    // Capture phase so we run BEFORE Radix Tabs' bubble-phase handler on the
+    // focused TabsTrigger and can stop it from intercepting the D-pad.
+    window.addEventListener("keydown", handler, true)
+    return () => window.removeEventListener("keydown", handler, true)
   }, [changeDirection, startGame])
 
   // Initial draw
@@ -254,12 +392,36 @@ export function SnakeGame() {
         </div>
       </div>
 
-      <div className="relative rounded-xl border border-border bg-card p-2 shadow-lg">
+      {/* Speed selector */}
+      <div className="flex w-full items-center justify-center gap-1.5">
+        <span className="mr-1 text-xs uppercase tracking-widest text-muted-foreground">Speed</span>
+        {(Object.keys(SPEEDS) as SpeedKey[]).map((key) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setSpeed(key)}
+            className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+              speed === key
+                ? "bg-primary text-primary-foreground"
+                : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+            }`}
+          >
+            {SPEEDS[key].label}
+          </button>
+        ))}
+      </div>
+
+      <div
+        className={`relative rounded-xl border border-border bg-card p-2 shadow-lg ${
+          status === "over" ? "snake-shake" : ""
+        }`}
+      >
         <canvas
           ref={canvasRef}
           width={BOARD}
           height={BOARD}
-          className="block max-w-full rounded-lg"
+          tabIndex={0}
+          className="block max-w-full rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-primary"
           style={{ width: BOARD, maxWidth: "100%", aspectRatio: "1 / 1", height: "auto" }}
           aria-label="Snake game board"
         />
@@ -297,6 +459,7 @@ export function SnakeGame() {
       <p className="text-center text-xs text-muted-foreground">
         Controls: Arrow keys, WASD, or TV remote D-pad · Space / OK to start
       </p>
+
     </div>
   )
 }
