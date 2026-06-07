@@ -384,7 +384,7 @@ export function YouTubePanel() {
   return (
     <div className="flex w-full max-w-md flex-col gap-4">
       {/* Account / sign-in card */}
-      <div className="rounded-xl border border-border bg-card p-4">
+      <CollapsiblePanel title="Account">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-pretty text-base font-bold text-foreground">YouTube library</h2>
@@ -425,7 +425,7 @@ export function YouTubePanel() {
             {authBusy ? "Opening Google…" : gisLoaded ? "Sign in with Google" : "Loading…"}
           </Button>
         )}
-      </div>
+      </CollapsiblePanel>
 
       {/* Player */}
       {embedSrc ? (
@@ -451,7 +451,7 @@ export function YouTubePanel() {
 
       {/* Library browser (signed in) */}
       {token && (
-        <div className="rounded-xl border border-border bg-card p-4">
+        <CollapsiblePanel title="Library">
           <div className="flex flex-wrap gap-1.5">
             {([
               ["liked", "Liked"],
@@ -555,20 +555,17 @@ export function YouTubePanel() {
               </ul>
             )}
           </div>
-        </div>
+        </CollapsiblePanel>
       )}
 
       {/* Paste-a-link fallback (always available) */}
-      <div className="rounded-xl border border-border bg-card p-4">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Or paste a link
-        </p>
+      <CollapsiblePanel title="Paste a link">
         <form
           onSubmit={(e) => {
             e.preventDefault()
             play(value)
           }}
-          className="mt-2 flex flex-col gap-2 sm:flex-row"
+          className="flex flex-col gap-2 sm:flex-row"
         >
           <label htmlFor="yt-url" className="sr-only">
             YouTube link or video ID
@@ -586,10 +583,46 @@ export function YouTubePanel() {
             Play
           </Button>
         </form>
-      </div>
+      </CollapsiblePanel>
 
       {error && <p className="text-sm text-destructive text-pretty">{error}</p>}
     </div>
+  )
+}
+
+function CollapsiblePanel({
+  title,
+  defaultOpen = true,
+  children,
+}: {
+  title: string
+  defaultOpen?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <details
+      open={defaultOpen}
+      className="group rounded-xl border border-border bg-card [&[open]>summary>svg]:rotate-90"
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary/40 [&::-webkit-details-marker]:hidden">
+        <span className="uppercase tracking-wide text-xs text-muted-foreground">{title}</span>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="text-muted-foreground transition-transform"
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </summary>
+      <div className="border-t border-border px-4 py-3">{children}</div>
+    </details>
   )
 }
 
