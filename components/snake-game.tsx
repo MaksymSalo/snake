@@ -13,10 +13,10 @@ type Status = "idle" | "playing" | "over"
 type SpeedKey = "chill" | "normal" | "fast" | "insane"
 
 const SPEEDS: Record<SpeedKey, { label: string; ms: number }> = {
-  chill: { label: "Chill", ms: 160 },
-  normal: { label: "Normal", ms: 110 },
-  fast: { label: "Fast", ms: 70 },
-  insane: { label: "Insane", ms: 45 },
+  chill: { label: "Chill", ms: 210 },
+  normal: { label: "Normal", ms: 160 },
+  fast: { label: "Fast", ms: 100 },
+  insane: { label: "Insane", ms: 65 },
 }
 
 const FRUITS = ["🍎", "🍌", "🍇", "🍒", "🍓", "🍊", "🥝", "🍉", "🍑", "🥭", "🍍", "🫐"]
@@ -118,11 +118,17 @@ export function SnakeGame() {
     const food = foodRef.current
     const fcx = food.pos.x * CELL + CELL / 2
     const fcy = food.pos.y * CELL + CELL / 2
-    const pulse = 1 + Math.sin(Date.now() / 250) * 0.06
+    const pulse = 1 + Math.sin(Date.now() / 250) * 0.08
     ctx.save()
-    ctx.shadowColor = "rgba(255,200,80,0.55)"
-    ctx.shadowBlur = 10
-    ctx.font = `${Math.floor(CELL * 0.95 * pulse)}px serif`
+    // Soft glow underneath (drawn as a separate circle so it doesn't
+    // muddle the colored-emoji glyph itself, which Chrome renders as a bitmap)
+    const grad = ctx.createRadialGradient(fcx, fcy, 1, fcx, fcy, CELL * 0.8)
+    grad.addColorStop(0, "rgba(255,200,80,0.45)")
+    grad.addColorStop(1, "rgba(255,200,80,0)")
+    ctx.fillStyle = grad
+    ctx.fillRect(fcx - CELL, fcy - CELL, CELL * 2, CELL * 2)
+
+    ctx.font = `${Math.floor(CELL * 0.95 * pulse)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Twemoji Mozilla",system-ui,sans-serif`
     ctx.textAlign = "center"
     ctx.textBaseline = "middle"
     ctx.fillText(food.emoji, fcx, fcy + 1)
