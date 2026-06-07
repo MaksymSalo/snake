@@ -433,7 +433,13 @@ export function SnakeGame() {
         />
 
         {status !== "playing" && (
-          <div className="absolute inset-2 flex flex-col items-center justify-center gap-4 rounded-lg bg-card/85 backdrop-blur-sm">
+          <div
+            className={`absolute inset-2 flex flex-col items-center justify-center gap-4 rounded-lg ${
+              status === "over"
+                ? "bg-card/30 backdrop-blur-[2px]"
+                : "bg-card/85 backdrop-blur-sm"
+            }`}
+          >
             {status === "over" && (
               <div className="text-center">
                 <p className="text-xl font-bold text-destructive">Game Over</p>
