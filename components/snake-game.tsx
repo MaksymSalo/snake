@@ -71,6 +71,8 @@ export function SnakeGame() {
   const statusRef = useRef<Status>("idle")
   // Death animation: 0 → no animation, otherwise frame counter (0..1)
   const deathRef = useRef<number>(0)
+  // Swipe gesture state (TV cursor / touch)
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     statusRef.current = status
@@ -427,9 +429,32 @@ export function SnakeGame() {
           width={BOARD}
           height={BOARD}
           tabIndex={0}
-          className="block max-w-full rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="block max-w-full touch-none rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-primary"
           style={{ width: BOARD, maxWidth: "100%", aspectRatio: "1 / 1", height: "auto" }}
           aria-label="Snake game board"
+          onPointerDown={(e) => {
+            ;(e.currentTarget as HTMLCanvasElement).setPointerCapture(e.pointerId)
+            swipeStartRef.current = { x: e.clientX, y: e.clientY }
+          }}
+          onPointerMove={(e) => {
+            const start = swipeStartRef.current
+            if (!start) return
+            const dx = e.clientX - start.x
+            const dy = e.clientY - start.y
+            const THRESHOLD = 24
+            if (Math.abs(dx) < THRESHOLD && Math.abs(dy) < THRESHOLD) return
+            if (Math.abs(dx) > Math.abs(dy)) {
+              changeDirection(dx > 0 ? "right" : "left")
+            } else {
+              changeDirection(dy > 0 ? "down" : "up")
+            }
+            swipeStartRef.current = { x: e.clientX, y: e.clientY }
+          }}
+          onPointerUp={() => { swipeStartRef.current = null }}
+          onPointerCancel={() => { swipeStartRef.current = null }}
+          onClick={() => {
+            if (statusRef.current !== "playing") startGame()
+          }}
         />
 
         {status !== "playing" && (
@@ -458,8 +483,8 @@ export function SnakeGame() {
         )}
       </div>
 
-      {/* On-screen controls for touch / mobile */}
-      <div className="grid grid-cols-3 gap-2 sm:hidden" aria-hidden="true">
+      {/* On-screen D-pad — also used by the Samsung TV remote cursor */}
+      <div className="grid grid-cols-3 gap-2">
         <div />
         <ControlButton label="Up" onPress={() => changeDirection("up")}>↑</ControlButton>
         <div />
@@ -469,7 +494,7 @@ export function SnakeGame() {
       </div>
 
       <p className="text-center text-xs text-muted-foreground">
-        Controls: Arrow keys, WASD, or TV remote D-pad · Space / OK to start
+        Keyboard: arrow keys / WASD · TV remote: swipe across the board with the cursor, or click the D-pad
       </p>
 
     </div>
@@ -490,7 +515,7 @@ function ControlButton({
       type="button"
       aria-label={label}
       onClick={onPress}
-      className="flex h-14 w-14 items-center justify-center rounded-lg border border-border bg-secondary text-xl text-secondary-foreground active:bg-primary active:text-primary-foreground"
+      className="flex h-20 w-20 items-center justify-center rounded-xl border border-border bg-secondary text-3xl text-secondary-foreground transition-colors hover:bg-primary/30 active:bg-primary active:text-primary-foreground sm:h-16 sm:w-16 sm:text-2xl"
     >
       {children}
     </button>
