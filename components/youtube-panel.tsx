@@ -80,10 +80,11 @@ function parseInput(raw: string): Source {
 
 function buildEmbedSrc(source: Source): string | null {
   if (!source) return null
+  const params = "autoplay=1&controls=0&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1&playsinline=1"
   if (source.kind === "playlist") {
-    return `https://www.youtube-nocookie.com/embed/videoseries?list=${source.id}&autoplay=1`
+    return `https://www.youtube-nocookie.com/embed/videoseries?list=${source.id}&${params}`
   }
-  return `https://www.youtube-nocookie.com/embed/${source.id}?autoplay=1`
+  return `https://www.youtube-nocookie.com/embed/${source.id}?${params}`
 }
 
 /* ------------------------------ API helpers ------------------------------ */
@@ -383,9 +384,33 @@ export function YouTubePanel() {
 
   return (
     <div className="flex w-full max-w-md flex-col gap-4">
-      {/* Account / sign-in card */}
-      <CollapsiblePanel title="Account">
-        <div className="flex items-center justify-between gap-3">
+      {/* Player */}
+      {embedSrc ? (
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          <div className="aspect-video w-full">
+            <iframe
+              key={embedSrc}
+              src={embedSrc}
+              title="YouTube player"
+              className="h-full w-full"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="flex aspect-video w-full items-center justify-center rounded-xl border border-dashed border-border bg-card/50 px-6 text-center">
+          <p className="text-sm text-muted-foreground text-pretty">
+            Nothing playing yet — open Controls below to pick something.
+          </p>
+        </div>
+      )}
+
+      {/* All controls collapsed under one panel */}
+      <CollapsiblePanel title="Controls" defaultOpen={false}>
+        <div className="flex flex-col gap-4">
+          {/* Account / sign-in */}
+          <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-pretty text-base font-bold text-foreground">YouTube library</h2>
             <p className="mt-1 text-pretty text-sm leading-relaxed text-muted-foreground">
@@ -425,34 +450,12 @@ export function YouTubePanel() {
             {authBusy ? "Opening Google…" : gisLoaded ? "Sign in with Google" : "Loading…"}
           </Button>
         )}
-      </CollapsiblePanel>
 
-      {/* Player */}
-      {embedSrc ? (
-        <div className="overflow-hidden rounded-xl border border-border bg-card">
-          <div className="aspect-video w-full">
-            <iframe
-              key={embedSrc}
-              src={embedSrc}
-              title="YouTube player"
-              className="h-full w-full"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            />
-          </div>
-        </div>
-      ) : (
-        <div className="flex aspect-video w-full items-center justify-center rounded-xl border border-dashed border-border bg-card/50 px-6 text-center">
-          <p className="text-sm text-muted-foreground text-pretty">
-            Nothing playing yet — pick something from your library or paste a link below.
-          </p>
-        </div>
-      )}
-
-      {/* Library browser (signed in) */}
-      {token && (
-        <CollapsiblePanel title="Library">
-          <div className="flex flex-wrap gap-1.5">
+          {/* Library browser (signed in) */}
+          {token && (
+            <div className="border-t border-border pt-4">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Library</p>
+              <div className="flex flex-wrap gap-1.5">
             {([
               ["liked", "Liked"],
               ["playlists", "Playlists"],
@@ -554,35 +557,38 @@ export function YouTubePanel() {
                 ))}
               </ul>
             )}
-          </div>
-        </CollapsiblePanel>
-      )}
+              </div>
+            </div>
+          )}
 
-      {/* Paste-a-link fallback (always available) */}
-      <CollapsiblePanel title="Paste a link">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            play(value)
-          }}
-          className="flex flex-col gap-2 sm:flex-row"
-        >
-          <label htmlFor="yt-url" className="sr-only">
-            YouTube link or video ID
-          </label>
-          <input
-            id="yt-url"
-            type="text"
-            inputMode="url"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder="https://youtu.be/… or video ID"
-            className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none ring-ring placeholder:text-muted-foreground focus-visible:ring-2"
-          />
-          <Button type="submit" variant="secondary" className="shrink-0">
-            Play
-          </Button>
-        </form>
+          {/* Paste a link */}
+          <div className="border-t border-border pt-4">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Paste a link</p>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                play(value)
+              }}
+              className="flex flex-col gap-2 sm:flex-row"
+            >
+              <label htmlFor="yt-url" className="sr-only">
+                YouTube link or video ID
+              </label>
+              <input
+                id="yt-url"
+                type="text"
+                inputMode="url"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder="https://youtu.be/… or video ID"
+                className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none ring-ring placeholder:text-muted-foreground focus-visible:ring-2"
+              />
+              <Button type="submit" variant="secondary" className="shrink-0">
+                Play
+              </Button>
+            </form>
+          </div>
+        </div>
       </CollapsiblePanel>
 
       {error && <p className="text-sm text-destructive text-pretty">{error}</p>}
