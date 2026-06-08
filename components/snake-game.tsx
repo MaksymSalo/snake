@@ -82,6 +82,14 @@ export function SnakeGame() {
     if (lastDirTimerRef.current) window.clearTimeout(lastDirTimerRef.current)
     lastDirTimerRef.current = window.setTimeout(() => setLastDir(null), 180)
   }, [])
+  // Debug: last few raw events that arrived at the controller. Helps figure
+  // out what the Samsung remote actually sends on this TV / firmware.
+  const [debugEvents, setDebugEvents] = useState<string[]>([])
+  const pushDebug = useCallback((line: string) => {
+    setDebugEvents((prev) => [line, ...prev].slice(0, 6))
+  }, [])
+  // Virtual-pointer tracking for ring-as-trackpad firmware
+  const pointerAccumRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
 
   useEffect(() => {
     statusRef.current = status
@@ -514,6 +522,7 @@ export function SnakeGame() {
             38: "up", 40: "down", 37: "left", 39: "right",
             29460: "up", 29461: "down", 29462: "left", 29463: "right",
           }
+          pushDebug(`keydown key="${e.key}" code=${e.keyCode}`)
           const dir = map[e.key] ?? codeMap[e.keyCode]
           if (dir) {
             e.preventDefault()
@@ -526,6 +535,40 @@ export function SnakeGame() {
             if (statusRef.current !== "playing") startGame()
           }
         }}
+        // Some Samsung remotes deliver ring swipes as wheel events instead
+        // of key events when the focused element captures input.
+        onWheel={(e) => {
+          pushDebug(`wheel dx=${Math.round(e.deltaX)} dy=${Math.round(e.deltaY)}`)
+          const { deltaX, deltaY } = e
+          if (Math.abs(deltaX) < 4 && Math.abs(deltaY) < 4) return
+          e.preventDefault()
+          if (Math.abs(deltaX) > Math.abs(deltaY)) {
+            changeDirection(deltaX > 0 ? "right" : "left")
+          } else {
+            changeDirection(deltaY > 0 ? "down" : "up")
+          }
+        }}
+        // Other firmware delivers ring as virtual pointer movement on the
+        // focused element. Accumulate and translate to a direction once we
+        // cross a threshold.
+        onPointerMove={(e) => {
+          if (e.pointerType === "mouse" && !e.buttons) {
+            // Free hover from a real mouse — ignore.
+          }
+          pointerAccumRef.current.x += e.movementX || 0
+          pointerAccumRef.current.y += e.movementY || 0
+          const { x, y } = pointerAccumRef.current
+          const TH = 28
+          if (Math.abs(x) < TH && Math.abs(y) < TH) return
+          if (Math.abs(x) > Math.abs(y)) {
+            changeDirection(x > 0 ? "right" : "left")
+          } else {
+            changeDirection(y > 0 ? "down" : "up")
+          }
+          pushDebug(`pointer dx=${Math.round(x)} dy=${Math.round(y)}`)
+          pointerAccumRef.current = { x: 0, y: 0 }
+        }}
+        onPointerLeave={() => { pointerAccumRef.current = { x: 0, y: 0 } }}
         aria-label="Game controller — click to start, then use the remote ring or arrow keys to steer"
         className={`flex w-full max-w-xs flex-col items-center gap-3 rounded-2xl border-2 p-5 outline-none transition-colors ${
           status === "playing" && controllerFocused
@@ -564,6 +607,27 @@ export function SnakeGame() {
             : "press to begin"}
         </span>
       </button>
+
+      {/* Debug strip — shows every event the controller actually receives.
+          Use this on the TV to figure out what the remote fires. */}
+      <div className="w-full max-w-xs rounded-lg border border-dashed border-border bg-card/50 p-2 text-left">
+        <p className="mb-1 text-[10px] uppercase tracking-widest text-muted-foreground">
+          Remote events (debug)
+        </p>
+        {debugEvents.length === 0 ? (
+          <p className="font-mono text-[11px] text-muted-foreground">
+            Focus the Controller and move the remote ring…
+          </p>
+        ) : (
+          <ul className="space-y-0.5 font-mono text-[11px] text-foreground">
+            {debugEvents.map((line, i) => (
+              <li key={i} className={i === 0 ? "text-primary" : "text-muted-foreground"}>
+                {line}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
     </div>
   )
