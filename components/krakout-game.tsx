@@ -123,32 +123,7 @@ export function KrakoutGame() {
   useEffect(() => { speedRef.current = speed }, [speed])
   useEffect(() => { levelRef.current = level }, [level])
 
-  // Auto-advance ~1.5s after clearing a level
-  useEffect(() => {
-    if (status !== "cleared") return
-    const t = window.setTimeout(() => advanceLevel(), 1500)
-    return () => window.clearTimeout(t)
-  }, [status, advanceLevel])
-
-  // While playing, tick the UI clock every 200ms so timer bars refresh,
-  // and sync expired effects to state.
-  useEffect(() => {
-    if (status !== "playing") return
-    const id = window.setInterval(() => {
-      const now = performance.now()
-      const before = effectsRef.current
-      const after = {
-        wide: before.wide > now ? before.wide : 0,
-        sticky: before.sticky > now ? before.sticky : 0,
-      }
-      if (after.wide !== before.wide || after.sticky !== before.sticky) {
-        effectsRef.current = after
-      }
-      setEffects({ ...effectsRef.current })
-      setUiClock((c) => c + 1)
-    }, 200)
-    return () => window.clearInterval(id)
-  }, [status])
+  // (Auto-advance + UI-clock effects moved below their callback dependencies.)
 
   // Speed scales 7% per level on top of the user's chosen speed preset.
   const levelMult = (lvl: number) => 1 + (lvl - 1) * 0.07
@@ -319,6 +294,33 @@ export function KrakoutGame() {
       return next
     })
   }, [resetBallAndBat])
+
+  // Auto-advance ~1.5s after clearing a level
+  useEffect(() => {
+    if (status !== "cleared") return
+    const t = window.setTimeout(() => advanceLevel(), 1500)
+    return () => window.clearTimeout(t)
+  }, [status, advanceLevel])
+
+  // While playing, tick the UI clock every 200ms so timer bars refresh,
+  // and sync expired effects to state.
+  useEffect(() => {
+    if (status !== "playing") return
+    const id = window.setInterval(() => {
+      const now = performance.now()
+      const before = effectsRef.current
+      const after = {
+        wide: before.wide > now ? before.wide : 0,
+        sticky: before.sticky > now ? before.sticky : 0,
+      }
+      if (after.wide !== before.wide || after.sticky !== before.sticky) {
+        effectsRef.current = after
+      }
+      setEffects({ ...effectsRef.current })
+      setUiClock((c) => c + 1)
+    }, 200)
+    return () => window.clearInterval(id)
+  }, [status])
 
   /* ----- Main game loop (rAF) ----- */
 
