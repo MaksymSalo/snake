@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Button } from "@/components/ui/button"
 
 const GRID_SIZE = 20 // cells per row/column
 const CELL = 22 // px per cell
@@ -73,6 +72,16 @@ export function SnakeGame() {
   const deathRef = useRef<number>(0)
   // Swipe gesture state (TV cursor / touch)
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null)
+  // Controller: focus + last-pressed direction (for visual feedback)
+  const controllerRef = useRef<HTMLButtonElement>(null)
+  const [controllerFocused, setControllerFocused] = useState(false)
+  const [lastDir, setLastDir] = useState<Direction | null>(null)
+  const lastDirTimerRef = useRef<number | null>(null)
+  const flashDir = useCallback((dir: Direction) => {
+    setLastDir(dir)
+    if (lastDirTimerRef.current) window.clearTimeout(lastDirTimerRef.current)
+    lastDirTimerRef.current = window.setTimeout(() => setLastDir(null), 180)
+  }, [])
 
   useEffect(() => {
     statusRef.current = status
@@ -231,10 +240,11 @@ export function SnakeGame() {
     deathRef.current = 0
     setScore(0)
     setStatus("playing")
-    // Move focus off any tab/button so the TV remote arrow keys don't get
-    // hijacked by the Tabs widget (Radix listens on the focused trigger).
+    // Move focus to the Controller button so the Samsung TV remote enters
+    // "directional input capture" mode (blue arrow indicator appears) and
+    // every ring swipe lands as a keydown on the controller.
     requestAnimationFrame(() => {
-      canvasRef.current?.focus()
+      controllerRef.current?.focus()
     })
   }, [])
 
@@ -307,7 +317,8 @@ export function SnakeGame() {
     if (statusRef.current !== "playing") return
     if (dir === OPPOSITE[dirRef.current]) return
     nextDirRef.current = dir
-  }, [])
+    flashDir(dir)
+  }, [flashDir])
 
   // Keyboard + Samsung TV (Tizen) remote controls
   useEffect(() => {
@@ -469,55 +480,105 @@ export function SnakeGame() {
               <div className="text-center">
                 <p className="text-xl font-bold text-destructive">Game Over</p>
                 <p className="text-sm text-muted-foreground">You scored {score}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Click the Controller below to play again.</p>
               </div>
             )}
             {status === "idle" && (
               <p className="px-6 text-center text-sm text-muted-foreground text-pretty">
-                Use arrow keys or WASD to steer. Eat the food to grow.
+                Click the green Controller below to start. The TV remote will then steer the snake.
               </p>
             )}
-            <Button size="lg" onClick={startGame}>
-              {status === "over" ? "Play Again" : "Start Game"}
-            </Button>
           </div>
         )}
       </div>
 
-      {/* On-screen D-pad — also used by the Samsung TV remote cursor */}
-      <div className="grid grid-cols-3 gap-2">
-        <div />
-        <ControlButton label="Up" onPress={() => changeDirection("up")}>↑</ControlButton>
-        <div />
-        <ControlButton label="Left" onPress={() => changeDirection("left")}>←</ControlButton>
-        <ControlButton label="Down" onPress={() => changeDirection("down")}>↓</ControlButton>
-        <ControlButton label="Right" onPress={() => changeDirection("right")}>→</ControlButton>
-      </div>
+      {/* Remote Controller — clicking it captures the Samsung TV remote ring.
+          While focused, the TV shows its blue directional indicator and every
+          swipe of the ring lands here as an arrow keydown. */}
+      <button
+        ref={controllerRef}
+        type="button"
+        onClick={() => {
+          if (statusRef.current !== "playing") startGame()
+          // Either way, keep focus on the controller.
+          controllerRef.current?.focus()
+        }}
+        onFocus={() => setControllerFocused(true)}
+        onBlur={() => setControllerFocused(false)}
+        onKeyDown={(e) => {
+          const map: Record<string, Direction> = {
+            ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
+            w: "up", s: "down", a: "left", d: "right",
+          }
+          const codeMap: Record<number, Direction> = {
+            38: "up", 40: "down", 37: "left", 39: "right",
+            29460: "up", 29461: "down", 29462: "left", 29463: "right",
+          }
+          const dir = map[e.key] ?? codeMap[e.keyCode]
+          if (dir) {
+            e.preventDefault()
+            e.stopPropagation()
+            changeDirection(dir)
+            return
+          }
+          if (e.key === " " || e.key === "Enter") {
+            e.preventDefault()
+            if (statusRef.current !== "playing") startGame()
+          }
+        }}
+        aria-label="Game controller — click to start, then use the remote ring or arrow keys to steer"
+        className={`flex w-full max-w-xs flex-col items-center gap-3 rounded-2xl border-2 p-5 outline-none transition-colors ${
+          status === "playing" && controllerFocused
+            ? "border-primary bg-primary/15 ring-4 ring-primary/40"
+            : status === "playing"
+              ? "border-destructive/60 bg-destructive/10 animate-pulse"
+              : "border-border bg-secondary hover:bg-secondary/80 focus-visible:ring-4 focus-visible:ring-primary/40 focus-visible:border-primary"
+        }`}
+      >
+        <span className="text-base font-bold text-foreground">
+          {status === "playing"
+            ? (controllerFocused ? "Controller active — swipe the remote ring" : "Click to take control")
+            : status === "over"
+              ? "Play Again"
+              : "Start Game"}
+        </span>
 
-      <p className="text-center text-xs text-muted-foreground">
-        Keyboard: arrow keys / WASD · TV remote: swipe across the board with the cursor, or click the D-pad
-      </p>
+        {/* Directional indicator (3×3 grid of arrows) */}
+        <div className="grid grid-cols-3 grid-rows-3 gap-1">
+          <span />
+          <DirArrow active={lastDir === "up"}>↑</DirArrow>
+          <span />
+          <DirArrow active={lastDir === "left"}>←</DirArrow>
+          <span className="flex h-10 w-10 items-center justify-center rounded-md bg-background/60 text-xs text-muted-foreground">
+            OK
+          </span>
+          <DirArrow active={lastDir === "right"}>→</DirArrow>
+          <span />
+          <DirArrow active={lastDir === "down"}>↓</DirArrow>
+          <span />
+        </div>
+
+        <span className="text-[11px] uppercase tracking-widest text-muted-foreground">
+          {status === "playing"
+            ? (controllerFocused ? "TV remote · arrow keys · WASD" : "click here, then steer")
+            : "press to begin"}
+        </span>
+      </button>
 
     </div>
   )
 }
 
-function ControlButton({
-  children,
-  onPress,
-  label,
-}: {
-  children: React.ReactNode
-  onPress: () => void
-  label: string
-}) {
+function DirArrow({ active, children }: { active: boolean; children: React.ReactNode }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      onClick={onPress}
-      className="flex h-20 w-20 items-center justify-center rounded-xl border border-border bg-secondary text-3xl text-secondary-foreground transition-colors hover:bg-primary/30 active:bg-primary active:text-primary-foreground sm:h-16 sm:w-16 sm:text-2xl"
+    <span
+      className={`flex h-10 w-10 items-center justify-center rounded-md text-xl font-bold transition-all ${
+        active
+          ? "scale-110 bg-primary text-primary-foreground shadow-lg shadow-primary/40"
+          : "bg-background/60 text-muted-foreground"
+      }`}
     >
       {children}
-    </button>
+    </span>
   )
 }
