@@ -530,16 +530,20 @@ export function KrakoutGame() {
         return
       }
       if (key === " " || key === "Enter") {
+        e.preventDefault()
+        // Stop propagation so the focused controller button's own
+        // onKeyDown doesn't fire a second handler that would see the
+        // ball already released and pause the game.
+        e.stopPropagation()
         // Ignore auto-repeat: otherwise the first repeat releases the
         // sticky ball and the next repeat (no stuck balls left) pauses.
-        if (e.repeat) { e.preventDefault(); return }
+        if (e.repeat) return
         if (statusRef.current === "playing") {
           // If any ball is stuck, OK releases instead of pausing.
           if (!releaseStuckBalls()) setStatus("paused")
         } else {
           startGame()
         }
-        e.preventDefault()
       }
     }
     const onUp = (e: KeyboardEvent) => {
