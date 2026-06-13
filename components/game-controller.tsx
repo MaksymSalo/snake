@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { useTvPlatform } from "@/lib/platform"
 
 /* ============================================================================
  * GameController — a shared, configurable controller for the arcade games.
@@ -112,6 +113,14 @@ export function GameController({
   const buttonRef = useRef<HTMLButtonElement>(null)
   const [focused, setFocused] = useState(false)
   const playing = status === "playing"
+
+  // On a TV there's no mouse — auto-capture the remote so the user never has to
+  // "click" the controller. Re-focus on every status change so the remote stays
+  // captured across start / game-over / next-level.
+  const { isTV } = useTvPlatform()
+  useEffect(() => {
+    if (isTV) buttonRef.current?.focus()
+  }, [isTV, status])
 
   // Latest callbacks/config in refs so the window listener stays stable.
   const cbRef = useRef({ onPress, onRelease, onOk, axes, mode })
