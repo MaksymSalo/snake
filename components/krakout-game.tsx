@@ -507,20 +507,32 @@ export function KrakoutGame() {
 
   useEffect(() => {
     const downKeys = new Set<string>()
+    // Normalize: some TV browsers (Samsung Tizen, older WebKit) emit the
+    // legacy IE-style names "Up"/"Down"/"Left"/"Right" instead of "ArrowUp" etc.
+    const normalizeKey = (k: string) => {
+      if (k === "Up") return "ArrowUp"
+      if (k === "Down") return "ArrowDown"
+      if (k === "Spacebar") return " "
+      return k
+    }
     const syncBat = () => {
       const up = downKeys.has("ArrowUp") || downKeys.has("w")
       const dn = downKeys.has("ArrowDown") || downKeys.has("s")
       setBatDir(up && !dn ? -1 : dn && !up ? 1 : 0)
     }
     const onDown = (e: KeyboardEvent) => {
-      if (["ArrowUp", "ArrowDown", "w", "s"].includes(e.key)) {
-        downKeys.add(e.key)
+      const key = normalizeKey(e.key)
+      if (["ArrowUp", "ArrowDown", "w", "s"].includes(key)) {
+        downKeys.add(key)
         e.preventDefault()
         e.stopPropagation()
         syncBat()
         return
       }
-      if (e.key === " " || e.key === "Enter") {
+      if (key === " " || key === "Enter") {
+        // Ignore auto-repeat: otherwise the first repeat releases the
+        // sticky ball and the next repeat (no stuck balls left) pauses.
+        if (e.repeat) { e.preventDefault(); return }
         if (statusRef.current === "playing") {
           // If any ball is stuck, OK releases instead of pausing.
           if (!releaseStuckBalls()) setStatus("paused")
@@ -531,7 +543,7 @@ export function KrakoutGame() {
       }
     }
     const onUp = (e: KeyboardEvent) => {
-      if (downKeys.delete(e.key)) syncBat()
+      if (downKeys.delete(normalizeKey(e.key))) syncBat()
     }
     window.addEventListener("keydown", onDown, true)
     window.addEventListener("keyup", onUp, true)
@@ -577,14 +589,20 @@ export function KrakoutGame() {
       </div>
 
       {/* Speed selector */}
-      <div className="flex w-full items-center justify-center gap-1.5">
-        <span className="mr-1 text-xs uppercase tracking-widest text-muted-foreground">Speed</span>
+      <div className="flex w-full items-center justify-center gap-1">
+        <span className="mr-1 text-[10px] uppercase tracking-widest text-muted-foreground">Speed</span>
         {(Object.keys(SPEEDS) as SpeedKey[]).map((key) => (
           <button
             key={key}
             type="button"
-            onClick={() => setSpeed(key)}
-            className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+            // Don't steal focus from the controller when clicked — keeps
+            // the TV remote / arrow keys driving the bat after a tap.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              setSpeed(key)
+              if (statusRef.current === "playing") controllerRef.current?.focus()
+            }}
+            className={`rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors ${
               speed === key
                 ? "bg-primary text-primary-foreground"
                 : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
@@ -688,19 +706,23 @@ export function KrakoutGame() {
         onFocus={() => setControllerFocused(true)}
         onBlur={() => { setControllerFocused(false); setBatDir(0); setPressed(0) }}
         onKeyDown={(e) => {
-          if (e.key === "ArrowUp" || e.key === "w") {
+          // Tizen / legacy WebKit TV remotes report "Up"/"Down" instead of "ArrowUp"/"ArrowDown".
+          const key = e.key === "Up" ? "ArrowUp" : e.key === "Down" ? "ArrowDown" : e.key === "Spacebar" ? " " : e.key
+          if (key === "ArrowUp" || key === "w") {
             e.preventDefault(); e.stopPropagation(); setBatDir(-1); setPressed(-1)
-          } else if (e.key === "ArrowDown" || e.key === "s") {
+          } else if (key === "ArrowDown" || key === "s") {
             e.preventDefault(); e.stopPropagation(); setBatDir(1); setPressed(1)
-          } else if (e.key === " " || e.key === "Enter") {
+          } else if (key === " " || key === "Enter") {
             e.preventDefault()
+            if (e.repeat) return
             if (statusRef.current === "playing") {
               if (!releaseStuckBalls()) setStatus("paused")
             } else if (statusRef.current !== "playing") startGame()
           }
         }}
         onKeyUp={(e) => {
-          if (["ArrowUp", "ArrowDown", "w", "s"].includes(e.key)) {
+          const key = e.key === "Up" ? "ArrowUp" : e.key === "Down" ? "ArrowDown" : e.key
+          if (["ArrowUp", "ArrowDown", "w", "s"].includes(key)) {
             setBatDir(0); setPressed(0)
           }
         }}
