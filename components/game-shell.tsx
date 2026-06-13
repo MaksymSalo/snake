@@ -3,6 +3,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { SnakeGame } from "@/components/snake-game"
 import { KrakoutGame } from "@/components/krakout-game"
+import { GalaxyGame } from "@/components/galaxy-game"
 import { YouTubePanel } from "@/components/youtube-panel"
 
 export function GameShell() {
@@ -15,6 +16,9 @@ export function GameShell() {
         <TabsTrigger value="krakout" className="flex-1">
           Krakout
         </TabsTrigger>
+        <TabsTrigger value="galaxy" className="flex-1">
+          Galaxy
+        </TabsTrigger>
         <TabsTrigger value="youtube" className="flex-1">
           YouTube
         </TabsTrigger>
@@ -26,6 +30,10 @@ export function GameShell() {
 
       <TabsContent value="krakout" className="flex w-full justify-center focus-visible:outline-none">
         <KrakoutGame />
+      </TabsContent>
+
+      <TabsContent value="galaxy" className="flex w-full justify-center focus-visible:outline-none">
+        <GalaxyGame />
       </TabsContent>
 
       <TabsContent value="youtube" className="flex w-full justify-center focus-visible:outline-none">

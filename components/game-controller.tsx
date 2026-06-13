@@ -56,8 +56,8 @@ function resolveKey(e: KeyboardEvent | React.KeyboardEvent): { dir?: Dir4; ok?: 
 /* ----- Props ----- */
 
 export type GameControllerProps = {
-  /** "both" = 4-way pad (snake); "vertical" = up/down only (krakout bat). */
-  axes?: "both" | "vertical"
+  /** "both" = 4-way pad (snake); "vertical" = up/down (krakout bat); "horizontal" = left/right (galaxy ship). */
+  axes?: "both" | "vertical" | "horizontal"
   /** "tap" = discrete presses flash briefly; "hold" = arrow stays lit until release. */
   mode?: "tap" | "hold"
   status: ControllerStatus
@@ -133,10 +133,12 @@ export function GameController({
   const [pressed, setPressed] = useState<Set<Dir4>>(new Set())
   const flashTimers = useRef<Map<Dir4, number>>(new Map())
 
-  const acceptsDir = useCallback(
-    (dir: Dir4) => cbRef.current.axes === "both" || dir === "up" || dir === "down",
-    [],
-  )
+  const acceptsDir = useCallback((dir: Dir4) => {
+    const a = cbRef.current.axes
+    if (a === "both") return true
+    if (a === "horizontal") return dir === "left" || dir === "right"
+    return dir === "up" || dir === "down" // vertical
+  }, [])
 
   const showPressed = useCallback((dir: Dir4) => {
     setPressed((prev) => {
@@ -316,6 +318,12 @@ export function GameController({
             <span />
             <DirArrow active={pressed.has("down")}>↓</DirArrow>
             <span />
+          </div>
+        ) : axes === "horizontal" ? (
+          <div className="flex items-center gap-1.5">
+            <DirArrow active={pressed.has("left")}>←</DirArrow>
+            <OkBox />
+            <DirArrow active={pressed.has("right")}>→</DirArrow>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-1.5">
