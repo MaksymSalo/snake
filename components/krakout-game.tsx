@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { GameController, type Dir4 } from "@/components/game-controller"
 
 /* ------------------------------ Constants ------------------------------ */
 
@@ -278,7 +279,6 @@ export function KrakoutGame() {
     setScore(0)
     setLives(3)
     setStatus("playing")
-    requestAnimationFrame(() => controllerRef.current?.focus())
   }, [resetBallAndBat, clearEffects])
 
   // Advance to the next level: keep score + lives, rebuild a harder grid,
@@ -290,7 +290,6 @@ export function KrakoutGame() {
       bricksRef.current = buildBricks(next)
       resetBallAndBat()
       setStatus("playing")
-      requestAnimationFrame(() => controllerRef.current?.focus())
       return next
     })
   }, [resetBallAndBat])
@@ -505,64 +504,36 @@ export function KrakoutGame() {
     return released
   }, [])
 
-  useEffect(() => {
-    const downKeys = new Set<string>()
-    // Normalize: some TV browsers (Samsung Tizen, older WebKit) emit the
-    // legacy IE-style names "Up"/"Down"/"Left"/"Right" instead of "ArrowUp" etc.
-    const normalizeKey = (k: string) => {
-      if (k === "Up") return "ArrowUp"
-      if (k === "Down") return "ArrowDown"
-      if (k === "Spacebar") return " "
-      return k
-    }
-    const syncBat = () => {
-      const up = downKeys.has("ArrowUp") || downKeys.has("w")
-      const dn = downKeys.has("ArrowDown") || downKeys.has("s")
-      setBatDir(up && !dn ? -1 : dn && !up ? 1 : 0)
-    }
-    const onDown = (e: KeyboardEvent) => {
-      const key = normalizeKey(e.key)
-      if (["ArrowUp", "ArrowDown", "w", "s"].includes(key)) {
-        downKeys.add(key)
-        e.preventDefault()
-        e.stopPropagation()
-        syncBat()
-        return
-      }
-      if (key === " " || key === "Enter") {
-        e.preventDefault()
-        // Stop propagation so the focused controller button's own
-        // onKeyDown doesn't fire a second handler that would see the
-        // ball already released and pause the game.
-        e.stopPropagation()
-        // Ignore auto-repeat: otherwise the first repeat releases the
-        // sticky ball and the next repeat (no stuck balls left) pauses.
-        if (e.repeat) return
-        if (statusRef.current === "playing") {
-          // If any ball is stuck, OK releases instead of pausing.
-          if (!releaseStuckBalls()) setStatus("paused")
-        } else {
-          startGame()
-        }
-      }
-    }
-    const onUp = (e: KeyboardEvent) => {
-      if (downKeys.delete(normalizeKey(e.key))) syncBat()
-    }
-    window.addEventListener("keydown", onDown, true)
-    window.addEventListener("keyup", onUp, true)
-    return () => {
-      window.removeEventListener("keydown", onDown, true)
-      window.removeEventListener("keyup", onUp, true)
-    }
-  }, [setBatDir, startGame, releaseStuckBalls])
+  // Bat is a "hold" control: track which vertical directions are held so that
+  // pressing up while down is still held resolves correctly.
+  const heldRef = useRef<Set<Dir4>>(new Set())
+  const syncBat = useCallback(() => {
+    const up = heldRef.current.has("up")
+    const dn = heldRef.current.has("down")
+    setBatDir(up && !dn ? -1 : dn && !up ? 1 : 0)
+  }, [setBatDir])
+  const handlePress = useCallback((dir: Dir4) => {
+    heldRef.current.add(dir)
+    syncBat()
+  }, [syncBat])
+  const handleRelease = useCallback((dir: Dir4) => {
+    heldRef.current.delete(dir)
+    syncBat()
+  }, [syncBat])
 
-  /* ----- Controller (focusable for Samsung TV remote) ----- */
-  const controllerRef = useRef<HTMLButtonElement>(null)
-  const [controllerFocused, setControllerFocused] = useState(false)
-  const [pressed, setPressed] = useState<-1 | 0 | 1>(0)
-
-  useEffect(() => { setPressed(batVRef.current as -1 | 0 | 1) }, [])
+  // OK / Enter / Space: release a stuck ball, else pause/resume/advance/start.
+  const handleOk = useCallback(() => {
+    const s = statusRef.current
+    if (s === "playing") {
+      if (!releaseStuckBalls()) setStatus("paused")
+    } else if (s === "paused") {
+      setStatus("playing")
+    } else if (s === "cleared") {
+      advanceLevel() // skip the 1.5s wait
+    } else {
+      startGame()
+    }
+  }, [releaseStuckBalls, advanceLevel, startGame])
 
   /* -------------------------------- Render ------------------------------- */
 
@@ -602,10 +573,7 @@ export function KrakoutGame() {
             // Don't steal focus from the controller when clicked — keeps
             // the TV remote / arrow keys driving the bat after a tap.
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              setSpeed(key)
-              if (statusRef.current === "playing") controllerRef.current?.focus()
-            }}
+            onClick={() => setSpeed(key)}
             className={`rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors ${
               speed === key
                 ? "bg-primary text-primary-foreground"
@@ -693,86 +661,18 @@ export function KrakoutGame() {
         )}
       </div>
 
-      {/* Controller */}
-      <button
-        ref={controllerRef}
-        type="button"
-        onClick={() => {
-          if (statusRef.current === "paused") {
-            setStatus("playing")
-          } else if (statusRef.current === "cleared") {
-            advanceLevel() // skip the 1.5s wait
-          } else if (statusRef.current !== "playing") {
-            startGame()
-          }
-          controllerRef.current?.focus()
-        }}
-        onFocus={() => setControllerFocused(true)}
-        onBlur={() => { setControllerFocused(false); setBatDir(0); setPressed(0) }}
-        onKeyDown={(e) => {
-          // Tizen / legacy WebKit TV remotes report "Up"/"Down" instead of "ArrowUp"/"ArrowDown".
-          const key = e.key === "Up" ? "ArrowUp" : e.key === "Down" ? "ArrowDown" : e.key === "Spacebar" ? " " : e.key
-          if (key === "ArrowUp" || key === "w") {
-            e.preventDefault(); e.stopPropagation(); setBatDir(-1); setPressed(-1)
-          } else if (key === "ArrowDown" || key === "s") {
-            e.preventDefault(); e.stopPropagation(); setBatDir(1); setPressed(1)
-          } else if (key === " " || key === "Enter") {
-            e.preventDefault()
-            if (e.repeat) return
-            if (statusRef.current === "playing") {
-              if (!releaseStuckBalls()) setStatus("paused")
-            } else if (statusRef.current !== "playing") startGame()
-          }
-        }}
-        onKeyUp={(e) => {
-          const key = e.key === "Up" ? "ArrowUp" : e.key === "Down" ? "ArrowDown" : e.key
-          if (["ArrowUp", "ArrowDown", "w", "s"].includes(key)) {
-            setBatDir(0); setPressed(0)
-          }
-        }}
-        // Pointer / touch fallback: pressing the top half = up, bottom = down
-        onPointerDown={(e) => {
-          const target = e.currentTarget as HTMLElement
-          const rect = target.getBoundingClientRect()
-          const half = (e.clientY - rect.top) < rect.height / 2 ? -1 : 1
-          setBatDir(half as -1 | 1); setPressed(half as -1 | 1)
-          target.setPointerCapture(e.pointerId)
-        }}
-        onPointerUp={() => { setBatDir(0); setPressed(0) }}
-        onPointerCancel={() => { setBatDir(0); setPressed(0) }}
-        aria-label="Krakout controller — click to start, then use the remote ring or arrow keys to move the bat"
-        className={`flex w-full max-w-md flex-col items-center gap-3 rounded-2xl border-2 p-5 outline-none transition-colors ${
-          status === "playing" && controllerFocused
-            ? "border-primary bg-primary/15 ring-4 ring-primary/40"
-            : status === "playing"
-              ? "border-destructive/60 bg-destructive/10 animate-pulse"
-              : "border-border bg-secondary hover:bg-secondary/80 focus-visible:ring-4 focus-visible:ring-primary/40 focus-visible:border-primary"
-        }`}
-      >
-        <span className="text-base font-bold text-foreground">
-          {status === "playing"
-            ? (controllerFocused ? "Controller active — up / down" : "Click to take control")
-            : status === "paused"
-              ? "Resume"
-              : status === "over"
-                ? "Play Again"
-                : status === "cleared"
-                  ? "Next Level"
-                  : "Start Game"}
-        </span>
-
-        <div className="flex flex-col items-center gap-1.5">
-          <DirArrow active={pressed === -1}>↑</DirArrow>
-          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-background/60 text-xs text-muted-foreground">OK</span>
-          <DirArrow active={pressed === 1}>↓</DirArrow>
-        </div>
-
-        <span className="text-[11px] uppercase tracking-widest text-muted-foreground">
-          {status === "playing"
-            ? (controllerFocused ? "ring up/down · arrows · WS · OK to release sticky" : "click here, then steer")
-            : "press to begin"}
-        </span>
-      </button>
+      {/* Shared controller — vertical bat (hold) + OK to release sticky. */}
+      <GameController
+        axes="vertical"
+        mode="hold"
+        status={status}
+        widthClass="max-w-md"
+        onPress={handlePress}
+        onRelease={handleRelease}
+        onOk={handleOk}
+        labels={{ active: "Controller active — up / down" }}
+        hint={{ active: "ring up/down · arrows · WS · OK to release sticky" }}
+      />
 
       {/* Power-up legend */}
       <div className="flex w-full max-w-md flex-wrap items-center justify-center gap-3 text-[11px] text-muted-foreground">
@@ -790,19 +690,5 @@ export function KrakoutGame() {
         ))}
       </div>
     </div>
-  )
-}
-
-function DirArrow({ active, children }: { active: boolean; children: React.ReactNode }) {
-  return (
-    <span
-      className={`flex h-10 w-10 items-center justify-center rounded-md text-xl font-bold transition-all ${
-        active
-          ? "scale-110 bg-primary text-primary-foreground shadow-lg shadow-primary/40"
-          : "bg-background/60 text-muted-foreground"
-      }`}
-    >
-      {children}
-    </span>
   )
 }

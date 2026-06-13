@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { GameController } from "@/components/game-controller"
 
 const GRID_SIZE = 20 // cells per row/column
 const CELL = 22 // px per cell
@@ -72,24 +73,6 @@ export function SnakeGame() {
   const deathRef = useRef<number>(0)
   // Swipe gesture state (TV cursor / touch)
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null)
-  // Controller: focus + last-pressed direction (for visual feedback)
-  const controllerRef = useRef<HTMLButtonElement>(null)
-  const [controllerFocused, setControllerFocused] = useState(false)
-  const [lastDir, setLastDir] = useState<Direction | null>(null)
-  const lastDirTimerRef = useRef<number | null>(null)
-  const flashDir = useCallback((dir: Direction) => {
-    setLastDir(dir)
-    if (lastDirTimerRef.current) window.clearTimeout(lastDirTimerRef.current)
-    lastDirTimerRef.current = window.setTimeout(() => setLastDir(null), 180)
-  }, [])
-  // Debug: last few raw events that arrived at the controller. Helps figure
-  // out what the Samsung remote actually sends on this TV / firmware.
-  const [debugEvents, setDebugEvents] = useState<string[]>([])
-  const pushDebug = useCallback((line: string) => {
-    setDebugEvents((prev) => [line, ...prev].slice(0, 6))
-  }, [])
-  // Virtual-pointer tracking for ring-as-trackpad firmware
-  const pointerAccumRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
 
   useEffect(() => {
     statusRef.current = status
@@ -248,13 +231,12 @@ export function SnakeGame() {
     deathRef.current = 0
     setScore(0)
     setStatus("playing")
-    // Move focus to the Controller button so the Samsung TV remote enters
-    // "directional input capture" mode (blue arrow indicator appears) and
-    // every ring swipe lands as a keydown on the controller.
-    requestAnimationFrame(() => {
-      controllerRef.current?.focus()
-    })
   }, [])
+
+  // Controller OK / Enter / Space — start (or restart) when not playing.
+  const handleOk = useCallback(() => {
+    if (statusRef.current !== "playing") startGame()
+  }, [startGame])
 
   // Game loop
   useEffect(() => {
@@ -325,80 +307,7 @@ export function SnakeGame() {
     if (statusRef.current !== "playing") return
     if (dir === OPPOSITE[dirRef.current]) return
     nextDirRef.current = dir
-    flashDir(dir)
-  }, [flashDir])
-
-  // Keyboard + Samsung TV (Tizen) remote controls
-  useEffect(() => {
-    // Samsung Tizen remotes send the D-pad as standard arrow keys, but some
-    // TV browser builds only populate `keyCode`. We match on both `e.key`
-    // and the numeric `keyCode` so the remote works reliably on a TV.
-    const keyMap: Record<string, Direction> = {
-      ArrowUp: "up",
-      ArrowDown: "down",
-      ArrowLeft: "left",
-      ArrowRight: "right",
-      w: "up",
-      s: "down",
-      a: "left",
-      d: "right",
-    }
-    // Tizen / standard TV remote numeric key codes.
-    // Samsung Smart TVs use the standard 37/38/39/40 for the D-pad, but some
-    // older / web-browser builds use the 295xx range — accept both.
-    const codeMap: Record<number, Direction> = {
-      38: "up",
-      40: "down",
-      37: "left",
-      39: "right",
-      29460: "up",
-      29461: "down",
-      29462: "left",
-      29463: "right",
-    }
-    // OK/Enter (13), Play (415), Pause (19), Tizen MediaPlayPause (10252)
-    const START_CODES = new Set([13, 415, 19, 10252])
-
-    const handler = (e: KeyboardEvent) => {
-      const dir = keyMap[e.key] ?? codeMap[e.keyCode]
-      if (dir) {
-        // Capture phase + stopPropagation prevents the Radix Tabs trigger
-        // (when still focused) from swallowing the arrow keys to switch tabs.
-        e.preventDefault()
-        e.stopPropagation()
-        changeDirection(dir)
-        return
-      }
-
-      const isStartKey =
-        e.key === " " || e.key === "Enter" || START_CODES.has(e.keyCode)
-      if (isStartKey && statusRef.current !== "playing") {
-        e.preventDefault()
-        e.stopPropagation()
-        startGame()
-      }
-    }
-
-    // Tizen exposes a key registration API; register the media keys we use so
-    // the platform routes them to the page instead of the system. Guarded so
-    // it is a no-op in normal browsers.
-    const tizen = (window as unknown as { tizen?: any }).tizen
-    try {
-      tizen?.tvinputdevice?.registerKeyBatch?.([
-        "MediaPlay",
-        "MediaPause",
-        "MediaPlayPause",
-        "MediaStop",
-      ])
-    } catch {
-      // ignore — not running on a Tizen TV
-    }
-
-    // Capture phase so we run BEFORE Radix Tabs' bubble-phase handler on the
-    // focused TabsTrigger and can stop it from intercepting the D-pad.
-    window.addEventListener("keydown", handler, true)
-    return () => window.removeEventListener("keydown", handler, true)
-  }, [changeDirection, startGame])
+  }, [])
 
   // Initial draw
   useEffect(() => {
@@ -500,149 +409,16 @@ export function SnakeGame() {
         )}
       </div>
 
-      {/* Remote Controller — clicking it captures the Samsung TV remote ring.
-          While focused, the TV shows its blue directional indicator and every
-          swipe of the ring lands here as an arrow keydown. */}
-      <button
-        ref={controllerRef}
-        type="button"
-        onClick={() => {
-          if (statusRef.current !== "playing") startGame()
-          // Either way, keep focus on the controller.
-          controllerRef.current?.focus()
-        }}
-        onFocus={() => setControllerFocused(true)}
-        onBlur={() => setControllerFocused(false)}
-        onKeyDown={(e) => {
-          const map: Record<string, Direction> = {
-            ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
-            w: "up", s: "down", a: "left", d: "right",
-          }
-          const codeMap: Record<number, Direction> = {
-            38: "up", 40: "down", 37: "left", 39: "right",
-            29460: "up", 29461: "down", 29462: "left", 29463: "right",
-          }
-          pushDebug(`keydown key="${e.key}" code=${e.keyCode}`)
-          const dir = map[e.key] ?? codeMap[e.keyCode]
-          if (dir) {
-            e.preventDefault()
-            e.stopPropagation()
-            changeDirection(dir)
-            return
-          }
-          if (e.key === " " || e.key === "Enter") {
-            e.preventDefault()
-            if (statusRef.current !== "playing") startGame()
-          }
-        }}
-        // Some Samsung remotes deliver ring swipes as wheel events instead
-        // of key events when the focused element captures input.
-        onWheel={(e) => {
-          pushDebug(`wheel dx=${Math.round(e.deltaX)} dy=${Math.round(e.deltaY)}`)
-          const { deltaX, deltaY } = e
-          if (Math.abs(deltaX) < 4 && Math.abs(deltaY) < 4) return
-          e.preventDefault()
-          if (Math.abs(deltaX) > Math.abs(deltaY)) {
-            changeDirection(deltaX > 0 ? "right" : "left")
-          } else {
-            changeDirection(deltaY > 0 ? "down" : "up")
-          }
-        }}
-        // Other firmware delivers ring as virtual pointer movement on the
-        // focused element. Accumulate and translate to a direction once we
-        // cross a threshold.
-        onPointerMove={(e) => {
-          if (e.pointerType === "mouse" && !e.buttons) {
-            // Free hover from a real mouse — ignore.
-          }
-          pointerAccumRef.current.x += e.movementX || 0
-          pointerAccumRef.current.y += e.movementY || 0
-          const { x, y } = pointerAccumRef.current
-          const TH = 28
-          if (Math.abs(x) < TH && Math.abs(y) < TH) return
-          if (Math.abs(x) > Math.abs(y)) {
-            changeDirection(x > 0 ? "right" : "left")
-          } else {
-            changeDirection(y > 0 ? "down" : "up")
-          }
-          pushDebug(`pointer dx=${Math.round(x)} dy=${Math.round(y)}`)
-          pointerAccumRef.current = { x: 0, y: 0 }
-        }}
-        onPointerLeave={() => { pointerAccumRef.current = { x: 0, y: 0 } }}
-        aria-label="Game controller — click to start, then use the remote ring or arrow keys to steer"
-        className={`flex w-full max-w-xs flex-col items-center gap-3 rounded-2xl border-2 p-5 outline-none transition-colors ${
-          status === "playing" && controllerFocused
-            ? "border-primary bg-primary/15 ring-4 ring-primary/40"
-            : status === "playing"
-              ? "border-destructive/60 bg-destructive/10 animate-pulse"
-              : "border-border bg-secondary hover:bg-secondary/80 focus-visible:ring-4 focus-visible:ring-primary/40 focus-visible:border-primary"
-        }`}
-      >
-        <span className="text-base font-bold text-foreground">
-          {status === "playing"
-            ? (controllerFocused ? "Controller active — swipe the remote ring" : "Click to take control")
-            : status === "over"
-              ? "Play Again"
-              : "Start Game"}
-        </span>
-
-        {/* Directional indicator (3×3 grid of arrows) */}
-        <div className="grid grid-cols-3 grid-rows-3 gap-1">
-          <span />
-          <DirArrow active={lastDir === "up"}>↑</DirArrow>
-          <span />
-          <DirArrow active={lastDir === "left"}>←</DirArrow>
-          <span className="flex h-10 w-10 items-center justify-center rounded-md bg-background/60 text-xs text-muted-foreground">
-            OK
-          </span>
-          <DirArrow active={lastDir === "right"}>→</DirArrow>
-          <span />
-          <DirArrow active={lastDir === "down"}>↓</DirArrow>
-          <span />
-        </div>
-
-        <span className="text-[11px] uppercase tracking-widest text-muted-foreground">
-          {status === "playing"
-            ? (controllerFocused ? "TV remote · arrow keys · WASD" : "click here, then steer")
-            : "press to begin"}
-        </span>
-      </button>
-
-      {/* Debug strip — shows every event the controller actually receives.
-          Use this on the TV to figure out what the remote fires. */}
-      <div className="w-full max-w-xs rounded-lg border border-dashed border-border bg-card/50 p-2 text-left">
-        <p className="mb-1 text-[10px] uppercase tracking-widest text-muted-foreground">
-          Remote events (debug)
-        </p>
-        {debugEvents.length === 0 ? (
-          <p className="font-mono text-[11px] text-muted-foreground">
-            Focus the Controller and move the remote ring…
-          </p>
-        ) : (
-          <ul className="space-y-0.5 font-mono text-[11px] text-foreground">
-            {debugEvents.map((line, i) => (
-              <li key={i} className={i === 0 ? "text-primary" : "text-muted-foreground"}>
-                {line}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
+      {/* Shared controller — owns all the TV-remote plumbing. */}
+      <GameController
+        axes="both"
+        mode="tap"
+        status={status}
+        onPress={changeDirection}
+        onOk={handleOk}
+        debug
+        labels={{ active: "Controller active — swipe the remote ring" }}
+      />
     </div>
-  )
-}
-
-function DirArrow({ active, children }: { active: boolean; children: React.ReactNode }) {
-  return (
-    <span
-      className={`flex h-10 w-10 items-center justify-center rounded-md text-xl font-bold transition-all ${
-        active
-          ? "scale-110 bg-primary text-primary-foreground shadow-lg shadow-primary/40"
-          : "bg-background/60 text-muted-foreground"
-      }`}
-    >
-      {children}
-    </span>
   )
 }
