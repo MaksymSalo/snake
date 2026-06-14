@@ -154,23 +154,49 @@ export function GalaxyGame() {
     ctx.lineWidth = 2
     ctx.strokeRect(1, 1, W - 2, H - 2)
 
-    // aliens
+    // enemy starships — angular fighters pointing downward (toward player)
     for (const a of aliensRef.current) {
       if (!a.alive) continue
       const fill = ALIEN_FILL[a.row] ?? ALIEN_FILL[ALIEN_FILL.length - 1]
-      ctx.fillStyle = fill
-      // body
+      const cx = a.x + ALIEN_W / 2
+      const top = a.y
+      const bot = a.y + ALIEN_H
+      const w = ALIEN_W
+
+      // swept wings (darker underlay)
+      ctx.fillStyle = "rgba(0,0,0,0.28)"
       ctx.beginPath()
-      ctx.roundRect(a.x, a.y, ALIEN_W, ALIEN_H, 5)
+      ctx.moveTo(a.x, top + 3)
+      ctx.lineTo(a.x - 2, bot - 2)
+      ctx.lineTo(a.x + 7, bot - 4)
+      ctx.closePath()
+      ctx.moveTo(a.x + w, top + 3)
+      ctx.lineTo(a.x + w + 2, bot - 2)
+      ctx.lineTo(a.x + w - 7, bot - 4)
+      ctx.closePath()
       ctx.fill()
-      // eyes
-      ctx.fillStyle = "rgba(0,0,0,0.75)"
-      ctx.fillRect(a.x + 6, a.y + 6, 4, 4)
-      ctx.fillRect(a.x + ALIEN_W - 10, a.y + 6, 4, 4)
-      // little "legs"
+
+      // hull — hexagonal fuselage tapering to a nose at the bottom
       ctx.fillStyle = fill
-      ctx.fillRect(a.x + 3, a.y + ALIEN_H, 3, 3)
-      ctx.fillRect(a.x + ALIEN_W - 6, a.y + ALIEN_H, 3, 3)
+      ctx.beginPath()
+      ctx.moveTo(cx, top)              // back point (top)
+      ctx.lineTo(a.x + 5, top + 5)
+      ctx.lineTo(a.x + 4, bot - 6)
+      ctx.lineTo(cx, bot)             // nose (bottom)
+      ctx.lineTo(a.x + w - 4, bot - 6)
+      ctx.lineTo(a.x + w - 5, top + 5)
+      ctx.closePath()
+      ctx.fill()
+
+      // canopy / glow
+      ctx.fillStyle = "rgba(255,255,255,0.85)"
+      ctx.beginPath()
+      ctx.ellipse(cx, top + 8, 3, 4, 0, 0, Math.PI * 2)
+      ctx.fill()
+      // twin engine sparks at the back
+      ctx.fillStyle = "rgba(255,255,255,0.55)"
+      ctx.fillRect(cx - 5, top + 1, 2, 2)
+      ctx.fillRect(cx + 3, top + 1, 2, 2)
     }
 
     // bombs (enemy)
@@ -192,20 +218,54 @@ export function GalaxyGame() {
     const invuln = invulnUntilRef.current > now
     const sx = shipXRef.current
     if (!invuln || Math.floor(now / 120) % 2 === 0) {
-      const grad = ctx.createLinearGradient(0, SHIP_Y, 0, SHIP_Y + SHIP_H)
-      grad.addColorStop(0, "#86efac")
+      const cx = sx + SHIP_W / 2
+      const top = SHIP_Y
+      const bot = SHIP_Y + SHIP_H
+
+      // engine exhaust flicker behind the ship
+      const flame = 4 + (Math.floor(now / 60) % 3) * 2
+      const fl = ctx.createLinearGradient(0, bot, 0, bot + flame + 4)
+      fl.addColorStop(0, "rgba(253,224,71,0.9)")
+      fl.addColorStop(1, "rgba(249,115,22,0)")
+      ctx.fillStyle = fl
+      ctx.beginPath()
+      ctx.moveTo(cx - 4, bot - 1)
+      ctx.lineTo(cx, bot + flame + 4)
+      ctx.lineTo(cx + 4, bot - 1)
+      ctx.closePath()
+      ctx.fill()
+
+      // swept wings
+      ctx.fillStyle = "#15803d"
+      ctx.beginPath()
+      ctx.moveTo(sx + 6, bot - 8)
+      ctx.lineTo(sx - 2, bot)
+      ctx.lineTo(sx + 12, bot - 2)
+      ctx.closePath()
+      ctx.moveTo(sx + SHIP_W - 6, bot - 8)
+      ctx.lineTo(sx + SHIP_W + 2, bot)
+      ctx.lineTo(sx + SHIP_W - 12, bot - 2)
+      ctx.closePath()
+      ctx.fill()
+
+      // fuselage — sleek arrow with a pointed nose
+      const grad = ctx.createLinearGradient(0, top, 0, bot)
+      grad.addColorStop(0, "#bbf7d0")
       grad.addColorStop(1, "#16a34a")
       ctx.fillStyle = grad
       ctx.beginPath()
-      ctx.moveTo(sx + SHIP_W / 2, SHIP_Y) // nose
-      ctx.lineTo(sx, SHIP_Y + SHIP_H)
-      ctx.lineTo(sx + SHIP_W, SHIP_Y + SHIP_H)
+      ctx.moveTo(cx, top)               // nose
+      ctx.lineTo(cx + 6, top + 9)
+      ctx.lineTo(cx + 5, bot)
+      ctx.lineTo(cx - 5, bot)
+      ctx.lineTo(cx - 6, top + 9)
       ctx.closePath()
       ctx.fill()
+
       // cockpit
-      ctx.fillStyle = "rgba(255,255,255,0.6)"
+      ctx.fillStyle = "rgba(186,230,253,0.95)"
       ctx.beginPath()
-      ctx.arc(sx + SHIP_W / 2, SHIP_Y + SHIP_H - 6, 3, 0, Math.PI * 2)
+      ctx.ellipse(cx, top + 8, 2.5, 4, 0, 0, Math.PI * 2)
       ctx.fill()
     }
   }, [])
