@@ -61,7 +61,62 @@ const SPEEDS: Record<SpeedKey, { label: string; mult: number }> = {
 // Cap level-driven difficulty so the board doesn't become 100% purple.
 const MAX_DESIGNED_LEVEL = 8
 
+// Hand-authored "picture" levels. Each pattern is a list of rows; every row is
+// BRICK_COLS chars wide. '.' = empty, '1'/'2'/'3' = brick with that many hits
+// (amber / blue / purple). Patterns are centred vertically in the grid.
+const SHAPE_LEVELS: Record<number, string[]> = {
+  // Level 4 — heart (uniform purple)
+  4: [
+    ".33..33.",
+    "33333333",
+    "33333333",
+    "33333333",
+    ".333333.",
+    ".333333.",
+    "..3333..",
+    "..3333..",
+    "...33...",
+    "...33...",
+  ],
+  // Level 5 — smiley face (uniform amber; eyes & mouth are gaps)
+  5: [
+    "..1111..",
+    ".111111.",
+    "11111111",
+    "11.11.11",
+    "11111111",
+    "11....11",
+    ".111111.",
+    "..1111..",
+  ],
+}
+
+function buildShape(pattern: string[]): Brick[] {
+  const rows = pattern.length
+  const startRow = Math.max(0, Math.floor((BRICK_ROWS - rows) / 2))
+  const out: Brick[] = []
+  for (let r = 0; r < rows; r++) {
+    const line = pattern[r]
+    for (let c = 0; c < BRICK_COLS; c++) {
+      const ch = line[c]
+      if (!ch || ch === ".") continue
+      const maxHits = Math.max(1, Math.min(3, Number(ch))) || 1
+      out.push({
+        x: BRICK_OX + c * (BRICK_W + BRICK_GAP),
+        y: BRICK_OY + (startRow + r) * (BRICK_H + BRICK_GAP),
+        alive: true,
+        hits: maxHits,
+        maxHits,
+      })
+    }
+  }
+  return out
+}
+
 function buildBricks(level: number): Brick[] {
+  const shape = SHAPE_LEVELS[level]
+  if (shape) return buildShape(shape)
+
   // Layout scales with level:
   // - Level 1: 2 purple cols, 3 blue cols, 3 amber cols.
   // - Each level shifts the purple/blue boundaries 0.5 cols to the right,
@@ -187,7 +242,9 @@ export function KrakoutGame() {
     // bricks
     for (const b of bricksRef.current) {
       if (!b.alive) continue
-      const style = BRICK_STYLES[b.hits] ?? BRICK_STYLES[1]
+      // Color is tied to the brick's full strength, so a block keeps its color
+      // as it's hit; remaining hits are shown by the pip dots / a damage tint.
+      const style = BRICK_STYLES[b.maxHits] ?? BRICK_STYLES[1]
       ctx.fillStyle = style.fill
       ctx.fillRect(b.x, b.y, BRICK_W, BRICK_H)
       // bevel
@@ -195,12 +252,10 @@ export function KrakoutGame() {
       ctx.fillRect(b.x, b.y, BRICK_W, 3)
       ctx.fillStyle = style.bottom
       ctx.fillRect(b.x, b.y + BRICK_H - 3, BRICK_W, 3)
-      // little HP pip dots in the corner for 2/3-hit bricks
-      if (b.maxHits > 1) {
-        ctx.fillStyle = "rgba(255,255,255,0.9)"
-        for (let i = 0; i < b.hits; i++) {
-          ctx.fillRect(b.x + 3 + i * 3, b.y + BRICK_H / 2 - 1, 2, 2)
-        }
+      // darken progressively as the brick takes damage
+      if (b.hits < b.maxHits) {
+        ctx.fillStyle = `rgba(0,0,0,${0.22 * (b.maxHits - b.hits)})`
+        ctx.fillRect(b.x, b.y, BRICK_W, BRICK_H)
       }
     }
 
